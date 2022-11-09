@@ -87,41 +87,24 @@ void draw_continents(int64_t seed, float* values)
     {
         for (int x = 0; x < IMG_SIZE; x++)
         {
-            struct Continent continent;
-            double closest_dist = 3000.0;
+            float highest_val = 0.0f;
 
             for (int i = 0; i < num_continents; i++)
             {
                 struct Continent temp = continents[i];
                 double temp_dist = dist_between((struct Pos){x, y}, temp.center);
 
-                if (temp_dist < closest_dist)
-                {
-                    int dist_x = abs(temp.center.x - x);
-                    int dist_y = abs(temp.center.y - y);
+                float val = -temp_dist + temp.max_dist;
+                val /= temp.max_dist;
 
-                    if (dist_x <= temp.width_radius && dist_y <= temp.height_radius)
-                    {
-                        closest_dist = temp_dist;
-                        continent = temp;
-                    }
+                if (val > highest_val)
+                {
+                    highest_val = val;
                 }
             }
 
-            unsigned char color;
-
-            if (closest_dist < 3000.0)
-            {
-                closest_dist = -closest_dist + continent.max_dist;
-                closest_dist /= continent.max_dist;
-
-                values[x * IMG_SIZE + y] = (float)closest_dist;
-                color = (unsigned char)(closest_dist * 255);
-            }
-            else
-            {
-                color = 0;
-            }
+            values[x * IMG_SIZE + y] = highest_val;
+            unsigned char color = (unsigned char)(highest_val * 255);
 
             pixels[index] = color;
             pixels[index + 1] = color;

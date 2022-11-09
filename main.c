@@ -9,29 +9,18 @@
 
 #include "simplex.c"
 
-const int IMG_SIZE = 2048;
+/* Image settings */
+const int IMG_SIZE = 4096;
 
 /* Continent settings */
+const int C_MIN_NUM = 8;
+const int C_MAX_NUM = 10;
 
-/*const int C_MIN_RAD = 100;
-const int C_MAX_RAD = 200;
-const int C_MIN_POS = 210;
-const int C_MAX_POS = 301;
-const int C_MAX_DIFF = 50;*/
+const int C_MIN_RAD = 300;
+const int C_MAX_RAD = 1200;
+const int C_MAX_DIFF = 550;
 
-/*const int C_MIN_RAD = 150;
-const int C_MAX_RAD = 225;
-const int C_MIN_POS = 231;
-const int C_MAX_POS = 281;
-const int C_MAX_DIFF = 35;*/
-
-const int C_MIN_NUM = 4;
-const int C_MAX_NUM = 6;
-
-const int C_MIN_RAD = 250;
-const int C_MAX_RAD = 600;
-const int C_MAX_DIFF = 100;
-
+/* Voronoi polygon settings */
 const int CELL_SIZE = 16;
 const int NUM_CELLS = IMG_SIZE / CELL_SIZE;
 
@@ -61,46 +50,32 @@ int main()
     srand(time(0));
     int64_t seed = rand();
 
+    //seed = 8214;
+
+    printf("%lld\n", seed);
+
     /* Simplex image generation*/
-    float* simplex_values = malloc(sizeof(float) * IMG_SIZE * IMG_SIZE);
+    //float* simplex_values = malloc(sizeof(float) * IMG_SIZE * IMG_SIZE);
+    int num_octaves = 4;
+    float thingy = 72.0f;
+    unsigned char* perms = get_permutations(seed);
 
     // either gotta increase octaves or increase the thingy in simplex.c when increasing image/continent size
-    simplex(simplex_values, 3, IMG_SIZE, seed);
-    simplex_image(simplex_values, IMG_SIZE);
+    //simplex(simplex_values, 4, IMG_SIZE, seed);
+    //simplex_image(simplex_values, IMG_SIZE);
 
     /* Generation of continents */
     float* continent_values = malloc(sizeof(float) * IMG_SIZE * IMG_SIZE);
     draw_continents(seed, continent_values);
-
-    /* Continent generation */
-    /*struct Pos continent;
-    continent.x = (rand() % (C_MAX_POS - C_MIN_POS)) + C_MIN_POS;
-    continent.y = (rand() % (C_MAX_POS - C_MIN_POS)) + C_MIN_POS;
-
-    int width = 0;
-    int height = 0;
-    int diff = C_MAX_DIFF + 1;
-
-    while (diff > C_MAX_DIFF)
-    {
-        width = (rand() % (C_MAX_RAD - C_MIN_RAD)) + C_MIN_RAD;
-        height = (rand() % (C_MAX_RAD - C_MIN_RAD)) + C_MIN_RAD;
-
-        diff = abs(width - height);
-    }
-
-    float* continent_values = malloc(sizeof(float) * IMG_SIZE * IMG_SIZE);
-    draw_continent(continent_values, IMG_SIZE, continent, width, height);*/
 
     /* Overlay of Continent and Simplex */
     for (int x = 0; x < IMG_SIZE; x++)
     {
         for (int y = 0; y < IMG_SIZE; y++)
         {
-            continent_values[x * IMG_SIZE + y] -= simplex_values[x * IMG_SIZE + y];
+            continent_values[x * IMG_SIZE + y] -= ((octave((float)x / thingy, (float)y / thingy, num_octaves, perms) + 1) / 2);
         }
     }
-
 
     // Voronoi diagram
     struct Pos* points = malloc(sizeof(struct Pos) * NUM_CELLS * NUM_CELLS);
