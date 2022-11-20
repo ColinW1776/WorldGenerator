@@ -9,20 +9,8 @@
 
 #include "simplex.c"
 
-/* Image settings */
-const int IMG_SIZE = 4096;
-
-/* Continent settings */
-const int C_MIN_NUM = 8;
-const int C_MAX_NUM = 10;
-
-const int C_MIN_RAD = 300;
-const int C_MAX_RAD = 1200;
-const int C_MAX_DIFF = 550;
-
-/* Voronoi polygon settings */
-const int CELL_SIZE = 16;
-const int NUM_CELLS = IMG_SIZE / CELL_SIZE;
+/* Image size needs to be global */
+const int IMG_SIZE = 2048;
 
 struct Pos
 {
@@ -30,12 +18,17 @@ struct Pos
     int y;
 };
 
+struct Point
+{
+    struct Pos pos;
+    int radius;
+    double max_dist;
+};
+
 struct Continent
 {
-    struct Pos center;
-    int width_radius;
-    int height_radius;
-    double max_dist;
+    struct Point* cluster;
+    int num_points;
 };
 
 double dist_between(struct Pos first, struct Pos second)
@@ -43,41 +36,63 @@ double dist_between(struct Pos first, struct Pos second)
     return sqrt(((second.x - first.x) * (second.x - first.x)) + ((second.y - first.y) * (second.y - first.y)));
 }
 
+/* Voronoi polygon settings */
+const int CELL_SIZE = 16;
+const int NUM_CELLS = IMG_SIZE / CELL_SIZE;
+
 #include "continent.c"
+#include "voronoi.c"
+
+int64_t get_seed()
+{
+    int64_t this;
+    int first, second;
+
+    // first 32 bits;
+    first = rand();
+    first <<= 16;
+    second = rand();
+    first += second;
+
+    // put the first 32 bits into the 64 bit int, then shift it 32 bits
+    this = (int64_t)first;
+    this <<= 32;
+
+    // second 32 bits
+    first = rand();
+    first <<= 16;
+    second = rand();
+    first += second;
+
+    this += first;
+    return this;
+}
 
 int main()
 {
+    struct timespec start, finish;
+    clock_gettime(CLOCK_MONOTONIC, &start);
+    unsigned long long begin = start.tv_sec * 1000000000 + start.tv_nsec;
+
+    /* Start map drawing */
+
     srand(time(0));
-    int64_t seed = rand();
+    int64_t seed = get_seed();
 
-    //seed = 8214;
+    printf("seed: %lld\n", seed);
 
-    printf("%lld\n", seed);
-
-    /* Simplex image generation*/
-    //float* simplex_values = malloc(sizeof(float) * IMG_SIZE * IMG_SIZE);
-    int num_octaves = 4;
-    float thingy = 72.0f;
+    /* Simplex settings creation */
+    int num_octaves = 3;
+    float thingy = 96.0f;
     unsigned char* perms = get_permutations(seed);
 
-    // either gotta increase octaves or increase the thingy in simplex.c when increasing image/continent size
-    //simplex(simplex_values, 4, IMG_SIZE, seed);
-    //simplex_image(simplex_values, IMG_SIZE);
+    /* Continent generation */
+    struct Continent* continent = malloc(sizeof(struct Continent));
+    generate_continent(seed, continent);
 
-    /* Generation of continents */
-    float* continent_values = malloc(sizeof(float) * IMG_SIZE * IMG_SIZE);
-    draw_continents(seed, continent_values);
+    /* Voronoi point generation */
+    srand(seed >> 1); // reseed the random number generator for point generation
 
-    /* Overlay of Continent and Simplex */
-    for (int x = 0; x < IMG_SIZE; x++)
-    {
-        for (int y = 0; y < IMG_SIZE; y++)
-        {
-            continent_values[x * IMG_SIZE + y] -= ((octave((float)x / thingy, (float)y / thingy, num_octaves, perms) + 1) / 2);
-        }
-    }
-
-    // Voronoi diagram
     struct Pos* points = malloc(sizeof(struct Pos) * NUM_CELLS * NUM_CELLS);
     float* values = malloc(sizeof(float) * NUM_CELLS * NUM_CELLS);
 
@@ -86,63 +101,26 @@ int main()
         for (int y = 0; y < NUM_CELLS; y++)
         {
             struct Pos pos = {rand() % CELL_SIZE, rand() % CELL_SIZE};
-
             points[x * NUM_CELLS + y] = pos;
-            values[x * NUM_CELLS + y] = continent_values[(x * CELL_SIZE + pos.x) * IMG_SIZE + (y * CELL_SIZE + pos.y)];
+
+            float cont_val = continent_value_at(continent, (x * CELL_SIZE + pos.x), (y * CELL_SIZE + pos.y));
+            float simplex_val = (octave((float)(x * CELL_SIZE + pos.x) / thingy, (float)(y * CELL_SIZE + pos.y) / thingy, num_octaves, perms) + 1) / 2;
+
+            values[x * NUM_CELLS + y] = cont_val - simplex_val;
         }
     }
 
-    unsigned char* pixels = malloc(3 * IMG_SIZE * IMG_SIZE);
-    unsigned int index = 0;
+    draw_polygons(values, points);
 
-    for (int y = 0; y < IMG_SIZE; y++)
-    {
-        for (int x = 0; x < IMG_SIZE; x++)
-        {
-            int cell_x = x / CELL_SIZE;
-            int cell_y = y / CELL_SIZE;
+    /* End of map drawing */
 
-            float closest_val = 0.0f;
-            double closest_to = 1000.0;
+    clock_gettime(CLOCK_MONOTONIC, &finish);
+    unsigned long long end = finish.tv_sec * 1000000000 + finish.tv_nsec;
 
-            for (int iy = -1; iy <= 1; iy++)
-            {
-                for (int ix = -1; ix <= 1; ix++)
-                {
-                    if (cell_x + ix >= 0 && cell_y + iy >= 0 && cell_x + ix < NUM_CELLS && cell_y + iy < NUM_CELLS)
-                    {
-                        struct Pos temp = points[(cell_x + ix) * NUM_CELLS + (cell_y + iy)];
-                        temp.x += (cell_x + ix) * CELL_SIZE;
-                        temp.y += (cell_y + iy) * CELL_SIZE;
-
-                        double dist = dist_between((struct Pos){x, y}, temp);
-
-                        if (dist < closest_to)
-                        {
-                            closest_to = dist;
-                            closest_val = values[(cell_x + ix) * NUM_CELLS + (cell_y + iy)];
-                        }
-                    }
-                }
-            }
-
-            unsigned char color;
-
-            if (closest_val > 0)
-                color = 255;
-            else
-                color = 0;
-
-            pixels[index] = color;
-            pixels[index + 1] = color;
-            pixels[index + 2] = color;
-
-            index += 3;
-        }
-    }
-
-    stbi_write_png("polygons.png", IMG_SIZE, IMG_SIZE, 3, pixels, 3 * IMG_SIZE);
-    free(pixels);
+    unsigned long long elapsed = end - begin;
+    printf("time elapsed (nanoseconds): %llu\n", elapsed);
+    elapsed /= 1000000;
+    printf("time elapsed (milliseconds): %llu\n", elapsed);
 
     return 0;
 }

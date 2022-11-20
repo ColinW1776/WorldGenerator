@@ -1,119 +1,69 @@
-void draw_continent(float* values, int img_size, struct Pos pos, int c_width, int c_height)
+void generate_continent(int64_t seed, struct Continent* continent)
 {
-    double max_dist = dist_between((struct Pos){pos.x - c_width, pos.y - c_height}, pos);
+    /* seed the random number generator */
+    srand(seed << 2);
 
-    unsigned char* pixels = malloc(3 * img_size * img_size);
-    unsigned int index = 0;
+    /* constants used to define shape and size of continent */
+    const int min_points = 6; // minimum number of points used to define the shape the continent
+    const int max_points = 10; // maximum number of points used to define the shape of the continent
+    const int min_radius = 300; // minimum radius of space covered by an individual point
+    const int max_radius = 600; // maximum radius of space covered by an individual point
+    const int buffer = 100; // minimum distance between edge of image and closest edge of continent
+    const int compactness = 300; // maximum distance between two cluster points
 
-    for (int y = 0; y < img_size; y++)
+    int num_points = rand() % (max_points - min_points) + min_points;
+    continent->cluster = malloc(sizeof(struct Point) * num_points);
+    continent->num_points = num_points;
+
+    /* set the positions of each of the points */
+    for (int i = 0; i < num_points; i++)
     {
-        for (int x = 0; x < img_size; x++)
+        struct Point point;
+        point.radius = rand() % (max_radius - min_radius) + min_radius;
+        point.max_dist = dist_between((struct Pos){0, 0}, (struct Pos){point.radius, point.radius});
+
+        int min_position = point.radius + buffer;
+        int max_position = IMG_SIZE - min_position;
+
+        if (i == 0)
         {
-            int dist_x = abs(pos.x - x);
-            int dist_y = abs(pos.y - y);
-
-            unsigned char color;
-
-            if (dist_x <= c_width && dist_y <= c_height)
-            {
-                double dist = dist_between((struct Pos){x, y}, pos);
-                dist = -dist + max_dist;
-                dist /= max_dist;
-
-                values[x * img_size + y] = (float)dist;
-
-                color = (unsigned char)(dist * 255);
-            }
-            else
-            {
-                color = 0;
-            }
-
-            pixels[index] = color;
-            pixels[index + 1] = color;
-            pixels[index + 2] = color;
-
-            index += 3;
+            point.pos = (struct Pos){rand() % (max_position - min_position) + min_position, rand() % (max_position - min_position) + min_position};
         }
-    }
+        else
+        {
+            struct Point last = continent->cluster[i - 1];
 
-    stbi_write_png("continent.png", img_size, img_size, 3, pixels, 3 * img_size);
-    free(pixels);
+            int min_x = min_position > (last.pos.x - compactness) ? min_position : (last.pos.x - compactness);
+            int max_x = max_position < (last.pos.x + compactness) ? max_position : (last.pos.x + compactness);
+            int min_y = min_position > (last.pos.y - compactness) ? min_position : (last.pos.y - compactness);
+            int max_y = max_position < (last.pos.y + compactness) ? max_position : (last.pos.y + compactness);
+
+            point.pos = (struct Pos){rand() % (max_x - min_x) + min_x, rand() % (max_y - min_y) + min_y};
+        }
+
+        continent->cluster[i] = point;
+    }
 }
 
-/* draw an image displaying the area that the continents take up and return the values through the parameter */
-void draw_continents(int64_t seed, float* values)
+float continent_value_at(struct Continent* continent, int x, int y)
 {
-    srand(seed << 3);
+    float highest_val = 0.0f;
 
-    int num_continents = (rand() % (C_MAX_NUM - C_MIN_NUM)) + C_MIN_NUM;
-    struct Continent* continents = malloc(sizeof(struct Continent) * num_continents);
-
-    for (int i = 0; i < num_continents; i++)
+    for (int i = 0; i < continent->num_points; i++)
     {
-        int width;
-        int height;
-        int diff = C_MAX_DIFF + 1;
+        struct Point temp = continent->cluster[i];
 
-        while (diff > C_MAX_DIFF)
+        double temp_dist = dist_between((struct Pos){x, y}, temp.pos);
+
+        float val = -temp_dist + temp.max_dist;
+        val /= temp.max_dist;
+
+        if (val > highest_val)
         {
-            width = (rand() % (C_MAX_RAD - C_MIN_RAD)) + C_MIN_RAD;
-            height = (rand() % (C_MAX_RAD - C_MIN_RAD)) + C_MIN_RAD;
-
-            diff = abs(width - height);
-        }
-
-        // position has to be offset from the border by the width/height radius + a constant amount
-        int buffer_dist = 50;
-
-        int min_x, max_x, min_y, max_y;
-
-        min_x = width + buffer_dist;
-        max_x = IMG_SIZE - min_x;
-        min_y = height + buffer_dist;
-        max_y = IMG_SIZE - min_y;
-
-        struct Pos pos = {rand() % (max_x - min_x) + min_x, rand() % (max_y - min_y) + min_y};
-
-        double max_dist = dist_between((struct Pos){pos.x - width, pos.y - height}, pos);
-
-        continents[i] = (struct Continent){pos, width, height, max_dist};
-    }
-
-    unsigned char* pixels = malloc(3 * IMG_SIZE * IMG_SIZE);
-    unsigned int index = 0;
-
-    for (int y = 0; y < IMG_SIZE; y++)
-    {
-        for (int x = 0; x < IMG_SIZE; x++)
-        {
-            float highest_val = 0.0f;
-
-            for (int i = 0; i < num_continents; i++)
-            {
-                struct Continent temp = continents[i];
-                double temp_dist = dist_between((struct Pos){x, y}, temp.center);
-
-                float val = -temp_dist + temp.max_dist;
-                val /= temp.max_dist;
-
-                if (val > highest_val)
-                {
-                    highest_val = val;
-                }
-            }
-
-            values[x * IMG_SIZE + y] = highest_val;
-            unsigned char color = (unsigned char)(highest_val * 255);
-
-            pixels[index] = color;
-            pixels[index + 1] = color;
-            pixels[index + 2] = color;
-
-            index += 3;
+            highest_val = val;
         }
     }
 
-    stbi_write_png("continents.png", IMG_SIZE, IMG_SIZE, 3, pixels, 3 * IMG_SIZE);
-    //free(pixels);
+    return highest_val;
 }
+
